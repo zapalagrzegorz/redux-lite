@@ -7,34 +7,51 @@
 export default class Store {
   constructor(rootReducer) {
     this.rootReducer = rootReducer;
-    this.state = this.rootReducer({ users: undefined, goods: undefined }, '');
-
+    this.subscriptions = [];
+    this.state = this.rootReducer(
+      { users: undefined, goods: undefined },
+      '',
+      this.subscriptions
+    );
     // warn
     // this.getState = this.getState.bind(this);
   }
 
+  subscribe(subscriptionCallback) {
+    this.subscriptions.push(subscriptionCallback);
+  }
   getState() {
     return { ...this.state };
   }
 
   dispatch(action) {
-    this.state = this.rootReducer(this.getState(), action);
+    this.state = this.rootReducer(this.getState(), action, this.subscriptions);
   }
 }
 
-const addUserAction = {
+const addUserActionCreator = (payload) => ({
   type: 'addUser',
   payload: 'SZ',
-};
-const removeUserAction = {
-  type: 'removeUser',
-  payload: 'GZ',
-};
+});
+
+const removeLastUserActionCreator = () => ({
+  type: 'removeLastUser',
+});
+
+const myInconsequentialActionCreator = () => ({
+  type: 'a type no one cares about',
+  data: {
+    thisThing: 'will not get used anyway',
+  },
+});
+
 // users: ['GZ', 'MZ'],
 //       goods: ['bananas', 'breads'],
 const userReducer = (prevState = ['GZ', 'MZ'], { type, payload }) => {
   if (type == 'addUser') {
     return [...prevState, payload];
+  } else if (type == 'removeLastUser') {
+    return [...prevState].slice(0, -1);
   } else {
     return prevState;
   }
@@ -52,10 +69,10 @@ const myReducers = {
   goods: goodsReducer,
 };
 
+// * RootReducer zawiera wszystkie cząstkowe reducery. Przyjmuje dowolną akcję i odpala
+// * wszystkie reducery pytając czy zmieni ona wartość stanu.
 const combineReducers = (reducers) => {
-  // * RootReducer zawiera wszystkie cząstkowe reducery. Przyjmuje dowolną akcję i odpala
-  // * wszystkie reducery pytając czy zmieni ona wartość stanu.
-  return (prevState, action) => {
+  return (prevState, action, subscriptions) => {
     //  przejdź przez wszystkie klucze i wartosci dotychczasowego stanu
     // za każdą iteracją: twórz nową wartość stanu w oparciu o cząstkowy reducer
     // [ z listy dostępnych szczątkowych reducerów wybierz ten, który odpowiada za wartość wg klucza ze stanu]
@@ -65,6 +82,8 @@ const combineReducers = (reducers) => {
     // jeżeli akcja nic nie robi, to zwróci dotychczasową wartość!
     //
     let newState = {};
+    let stateChanged = false;
+
     for (const stateSliceKey in prevState) {
       const prevStateSliceValue = prevState[stateSliceKey];
 
@@ -74,7 +93,18 @@ const combineReducers = (reducers) => {
       // each slice has its own appropriate reducer
       //
       const newStateSliceValue = sliceReducer(prevStateSliceValue, action);
+      // if state doesn't change, returns the very same slice
+
+      // state hasn't changed - references are the same
+      if (prevStateSliceValue !== newStateSliceValue) {
+        stateChanged = true;
+      }
       newState = { ...newState, [stateSliceKey]: newStateSliceValue };
+    }
+    if (stateChanged) {
+      subscriptions.forEach((subscriptionCallback) =>
+        subscriptionCallback(newState)
+      );
     }
     return newState;
 
@@ -85,19 +115,23 @@ const combineReducers = (reducers) => {
   };
 };
 
-const myInconsequentialAction = {
-  type: 'a type no one cares about',
-  data: {
-    thisThing: 'will not get used anyway',
-  },
-};
-
 const myRootReducer = combineReducers(myReducers);
 
 const store = new Store(myRootReducer);
 
 store.getState();
 
-store.dispatch(addUserAction);
+const announceStateChange = (nextState) => {
+  console.log(
+    `That action changed the state! Users are now ${nextState.users}`
+  );
+};
+
+store.subscribe(announceStateChange);
+
+store.dispatch(addUserActionCreator());
+store.dispatch(myInconsequentialActionCreator());
+store.dispatch(removeLastUserActionCreator());
+store.dispatch(myInconsequentialActionCreator());
 
 store.getState();
